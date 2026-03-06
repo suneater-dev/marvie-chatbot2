@@ -21,7 +21,7 @@ async function sendMessage(to, text) {
   if (!res.ok) {
     const err = await res.text();
     console.error('WhatsApp API error:', err);
-    throw new Error(`WhatsApp API error: ${res.status}`);
+    throw new Error(`WhatsApp API error: ${res.status} - ${err}`);
   }
 
   return res.json();

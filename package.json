@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "vercel dev"
   },
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
     "openai": "^4.73.0"
   }
