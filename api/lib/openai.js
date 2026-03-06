@@ -1,7 +1,14 @@
 const OpenAI = require('openai');
 const { SYSTEM_PROMPT } = require('./system-prompt');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let openai;
+
+function getClient() {
+  if (!openai) {
+    openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openai;
+}
 
 async function getAIReply(conversationHistory) {
   const messages = [
@@ -9,7 +16,7 @@ async function getAIReply(conversationHistory) {
     ...conversationHistory,
   ];
 
-  const response = await openai.chat.completions.create({
+  const response = await getClient().chat.completions.create({
     model: 'gpt-4o-mini',
     messages,
     max_tokens: 500,

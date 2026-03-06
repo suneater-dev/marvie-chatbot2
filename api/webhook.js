@@ -20,7 +20,7 @@ function getConversation(phone) {
   return messages;
 }
 
-// Cleanup expired conversations periodically
+// Lazy cleanup: remove expired entries on each request
 function cleanup() {
   const now = Date.now();
   for (const [phone, conv] of conversations) {
@@ -30,31 +30,27 @@ function cleanup() {
   }
 }
 
-setInterval(cleanup, 5 * 60 * 1000); // Every 5 minutes
-
 module.exports = async function handler(req, res) {
-  // GET — Meta webhook verification
-  if (req.method === 'GET') {
-    // Vercel may parse dot-keys as nested objects or flat keys
-    const q = req.query;
-    const mode = q['hub.mode'] || q?.hub?.mode;
-    const token = q['hub.verify_token'] || q?.hub?.verify_token;
-    const challenge = q['hub.challenge'] || q?.hub?.challenge;
+  try {
+    // GET — Meta webhook verification
+    if (req.method === 'GET') {
+      const q = req.query;
+      const mode = q['hub.mode'] || q?.hub?.mode;
+      const token = q['hub.verify_token'] || q?.hub?.verify_token;
+      const challenge = q['hub.challenge'] || q?.hub?.challenge;
 
-    if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
-      console.log('Webhook verified');
-      return res.status(200).send(challenge);
+      if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
+        console.log('Webhook verified');
+        return res.status(200).send(challenge);
+      }
+
+      return res.status(403).send('Forbidden');
     }
 
-    return res.status(403).send('Forbidden');
-  }
-
-  // POST — incoming WhatsApp message
-  if (req.method === 'POST') {
-    try {
+    // POST — incoming WhatsApp message
+    if (req.method === 'POST') {
       const body = req.body;
 
-      // Meta sends various webhook events; only process actual messages
       const entry = body?.entry?.[0];
       const change = entry?.changes?.[0];
       const value = change?.value;
@@ -71,10 +67,13 @@ module.exports = async function handler(req, res) {
         return res.status(200).send('OK');
       }
 
-      const from = message.from; // sender phone number
+      const from = message.from;
       const text = message.text.body;
 
       console.log(`Message from ${from}: ${text}`);
+
+      // Cleanup expired conversations
+      cleanup();
 
       // Get or create conversation history
       const history = getConversation(from);
@@ -94,12 +93,11 @@ module.exports = async function handler(req, res) {
 
       console.log(`Reply to ${from}: ${reply}`);
       return res.status(200).send('OK');
-    } catch (err) {
-      console.error('Webhook error:', err);
-      // Always return 200 to Meta so they don't retry
-      return res.status(200).send('OK');
     }
-  }
 
-  return res.status(405).send('Method not allowed');
+    return res.status(405).send('Method not allowed');
+  } catch (err) {
+    console.error('Webhook error:', err);
+    return res.status(200).send('OK');
+  }
 };
