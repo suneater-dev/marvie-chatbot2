@@ -1,5 +1,11 @@
-const { sendMessage } = require('./lib/whatsapp');
-const { getAIReply } = require('./lib/openai');
+let sendMessage, getAIReply;
+
+try {
+  sendMessage = require('./lib/whatsapp').sendMessage;
+  getAIReply = require('./lib/openai').getAIReply;
+} catch (err) {
+  console.error('Module load error:', err);
+}
 
 // In-memory conversation store: phone -> { messages, lastActivity }
 const conversations = new Map();
@@ -14,13 +20,11 @@ function getConversation(phone) {
     return conv.messages;
   }
 
-  // Expired or new — start fresh
   const messages = [];
   conversations.set(phone, { messages, lastActivity: now });
   return messages;
 }
 
-// Lazy cleanup: remove expired entries on each request
 function cleanup() {
   const now = Date.now();
   for (const [phone, conv] of conversations) {
@@ -40,29 +44,24 @@ module.exports = async function handler(req, res) {
       const challenge = q['hub.challenge'] || q?.hub?.challenge;
 
       if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
-        console.log('Webhook verified');
         return res.status(200).send(challenge);
       }
 
-      return res.status(403).send('Forbidden');
+      return res.status(403).json({ error: 'Forbidden', mode, token, envSet: !!process.env.WEBHOOK_VERIFY_TOKEN });
     }
 
     // POST — incoming WhatsApp message
     if (req.method === 'POST') {
       const body = req.body;
-
       const entry = body?.entry?.[0];
       const change = entry?.changes?.[0];
       const value = change?.value;
 
-      // Ignore status updates (delivered, read, etc.)
       if (!value?.messages) {
         return res.status(200).send('OK');
       }
 
       const message = value.messages[0];
-
-      // Only handle text messages for now
       if (message.type !== 'text') {
         return res.status(200).send('OK');
       }
@@ -70,34 +69,25 @@ module.exports = async function handler(req, res) {
       const from = message.from;
       const text = message.text.body;
 
-      console.log(`Message from ${from}: ${text}`);
-
-      // Cleanup expired conversations
       cleanup();
 
-      // Get or create conversation history
       const history = getConversation(from);
       history.push({ role: 'user', content: text });
 
-      // Cap history to last 20 messages to control token usage
       if (history.length > 20) {
         history.splice(0, history.length - 20);
       }
 
-      // Get AI reply
       const reply = await getAIReply(history);
       history.push({ role: 'assistant', content: reply });
 
-      // Send reply via WhatsApp
       await sendMessage(from, reply);
-
-      console.log(`Reply to ${from}: ${reply}`);
       return res.status(200).send('OK');
     }
 
     return res.status(405).send('Method not allowed');
   } catch (err) {
     console.error('Webhook error:', err);
-    return res.status(200).send('OK');
+    return res.status(200).json({ error: err.message });
   }
 };
