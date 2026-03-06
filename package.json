@@ -1,0 +1,11 @@
+{
+  "name": "marvie-whatsapp-bot",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "dependencies": {
+    "openai": "^4.73.0"
+  }
+}
